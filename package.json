@@ -1,0 +1,21 @@
+{
+  "name": "mc-control",
+  "version": "1.0.0",
+  "private": true,
+  "description": "로컬 Minecraft 서버를 관리하는 실시간 웹 대시보드",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "socket.io": "^4.8.1"
+  }
+}

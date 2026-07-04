@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <title>MC Control</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#dashboard" aria-label="MC Control 홈">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M5 3h14l2 4-2 14H5L3 7l2-4Zm2.2 3-1 2h11.6l-1-2H7.2ZM7 11v6h3v-6H7Zm7 0v6h3v-6h-3Z"/></svg>
+          </span>
+          <span>
+            <strong>MC CONTROL</strong>
+            <small>SERVER ADMIN</small>
+          </span>
+        </a>
+
+        <nav class="main-nav" aria-label="주 메뉴">
+          <button class="nav-item active" type="button" data-view="dashboard" data-testid="nav-dashboard">
+            <svg viewBox="0 0 24 24"><path d="M4 13h7V4H4v9Zm0 7h7v-5H4v5Zm9 0h7v-9h-7v9Zm0-16v5h7V4h-7Z"/></svg>
+            대시보드
+          </button>
+          <button class="nav-item" type="button" data-view="console" data-testid="nav-console">
+            <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4V5Zm2 3 3 3-3 3 1.4 1.4 4.4-4.4-4.4-4.4L6 8Zm6 6v2h5v-2h-5Z"/></svg>
+            콘솔
+          </button>
+          <button class="nav-item" type="button" data-view="files" data-testid="nav-files">
+            <svg viewBox="0 0 24 24"><path d="M3 5h7l2 2h9v12H3V5Zm2 4v8h14V9H5Z"/></svg>
+            파일
+          </button>
+        </nav>
+
+        <div class="sidebar-server">
+          <span class="eyebrow">SERVER</span>
+          <div class="sidebar-status">
+            <span class="status-dot" id="sidebarStatusDot"></span>
+            <div>
+              <strong id="sidebarStatusText">확인 중</strong>
+              <small id="sidebarUptime">—</small>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="pageEyebrow">OVERVIEW</p>
+            <h1 id="pageTitle">서버 대시보드</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="button button-ghost" type="button" id="refreshButton" aria-label="새로고침">
+              <svg viewBox="0 0 24 24"><path d="M17.7 6.3A8 8 0 1 0 20 12h-2a6 6 0 1 1-1.8-4.3L13 11h8V3l-3.3 3.3Z"/></svg>
+              새로고침
+            </button>
+            <button class="button button-primary" type="button" id="headerStartButton">
+              <svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg>
+              서버 시작
+            </button>
+          </div>
+        </header>
+
+        <section class="view active" id="view-dashboard" data-view-panel="dashboard">
+          <div class="hero-grid">
+            <article class="status-card panel">
+              <div class="status-card-top">
+                <div>
+                  <p class="eyebrow">MINECRAFT INSTANCE</p>
+                  <div class="large-status">
+                    <span class="status-pulse" id="heroStatusDot"></span>
+                    <h2 id="heroStatus">상태 확인 중</h2>
+                  </div>
+                </div>
+                <span class="status-badge" id="statusBadge">CHECKING</span>
+              </div>
+              <p class="status-description" id="statusDescription">서버 프로세스 상태를 불러오고 있습니다.</p>
+              <div class="hero-actions">
+                <button class="button button-primary button-large" type="button" id="startButton" data-testid="start-server">
+                  <svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg>
+                  서버 시작
+                </button>
+                <button class="button button-danger button-large" type="button" id="stopButton" data-testid="stop-server">
+                  <svg viewBox="0 0 24 24"><path d="M7 7h10v10H7V7Z"/></svg>
+                  서버 종료
+                </button>
+              </div>
+            </article>
+
+            <article class="panel quick-stats">
+              <p class="eyebrow">RUNTIME</p>
+              <div class="stat-list">
+                <div class="stat-row">
+                  <span>가동 시간</span>
+                  <strong id="uptimeValue">—</strong>
+                </div>
+                <div class="stat-row">
+                  <span>프로세스 ID</span>
+                  <strong id="pidValue">—</strong>
+                </div>
+                <div class="stat-row">
+                  <span>메모리 설정</span>
+                  <strong id="memoryValue">—</strong>
+                </div>
+                <div class="stat-row">
+                  <span>서버 파일</span>
+                  <strong id="jarValue">—</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="panel activity-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">LATEST EVENTS</p>
+                  <h2>최근 활동</h2>
+                </div>
+                <button class="text-button" type="button" data-go-view="console">전체 콘솔 보기 →</button>
+              </div>
+              <div class="activity-list" id="activityList">
+                <div class="empty-state compact">아직 기록된 활동이 없습니다.</div>
+              </div>
+            </article>
+
+            <article class="panel server-path-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">STORAGE</p>
+                  <h2>서버 위치</h2>
+                </div>
+              </div>
+              <div class="path-display" id="serverDirectory">불러오는 중…</div>
+              <button class="button button-secondary full-width" type="button" data-go-view="files">
+                파일 관리 열기
+              </button>
+              <p class="hint">JAR 파일, 설정, 플러그인 구성을 한곳에서 확인하고 수정합니다.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="view-console" data-view-panel="console">
+          <article class="terminal-panel panel">
+            <div class="terminal-toolbar">
+              <div class="terminal-title">
+                <span class="terminal-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+                <strong>SERVER CONSOLE</strong>
+                <span class="live-pill" id="livePill"><i></i> LIVE</span>
+              </div>
+              <div class="terminal-tools">
+                <label class="history-label" for="logDate">기록</label>
+                <select id="logDate" class="select" data-testid="log-date"></select>
+                <button class="icon-button" type="button" id="clearConsoleButton" title="화면 비우기" aria-label="콘솔 화면 비우기">
+                  <svg viewBox="0 0 24 24"><path d="M6 7h12l-1 13H7L6 7Zm3-4h6l1 2h4v2H4V5h4l1-2Z"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="terminal-output" id="consoleOutput" role="log" aria-live="polite" data-testid="console-output">
+              <div class="terminal-empty">콘솔 기록을 불러오는 중입니다…</div>
+            </div>
+            <form class="command-form" id="commandForm">
+              <span class="command-prompt" aria-hidden="true">›</span>
+              <label class="sr-only" for="commandInput">서버 명령어</label>
+              <input id="commandInput" type="text" autocomplete="off" maxlength="500" placeholder="명령어 입력 (예: list)" data-testid="command-input">
+              <button class="button button-primary" type="submit" id="sendCommandButton" data-testid="send-command">실행</button>
+            </form>
+          </article>
+          <p class="console-footnote">
+            콘솔 출력은 <strong>날짜별로 자동 저장</strong>됩니다. 위 기록 메뉴에서 이전 로그를 확인할 수 있습니다.
+          </p>
+        </section>
+
+        <section class="view" id="view-files" data-view-panel="files">
+          <div class="file-layout">
+            <article class="panel file-browser">
+              <div class="file-browser-heading">
+                <div>
+                  <p class="eyebrow">SERVER FILES</p>
+                  <h2>파일 탐색기</h2>
+                </div>
+                <button class="icon-button" type="button" id="refreshFilesButton" title="파일 새로고침" aria-label="파일 새로고침">
+                  <svg viewBox="0 0 24 24"><path d="M17.7 6.3A8 8 0 1 0 20 12h-2a6 6 0 1 1-1.8-4.3L13 11h8V3l-3.3 3.3Z"/></svg>
+                </button>
+              </div>
+              <nav class="breadcrumbs" id="breadcrumbs" aria-label="파일 경로"></nav>
+              <div class="file-list-header">
+                <span>이름</span><span>크기</span>
+              </div>
+              <div class="file-list" id="fileList" data-testid="file-list">
+                <div class="empty-state compact">파일을 불러오는 중입니다.</div>
+              </div>
+            </article>
+
+            <article class="panel editor-panel">
+              <div class="editor-heading">
+                <div class="editor-file-info">
+                  <span class="file-type-icon">TXT</span>
+                  <div>
+                    <strong id="editorFileName">파일을 선택하세요</strong>
+                    <small id="editorFileMeta">왼쪽 목록에서 편집할 파일을 선택하세요.</small>
+                  </div>
+                </div>
+                <button class="button button-primary" type="button" id="saveFileButton" disabled data-testid="save-file">
+                  저장
+                </button>
+              </div>
+              <textarea id="fileEditor" spellcheck="false" disabled aria-label="파일 편집기" data-testid="file-editor" placeholder="편집할 텍스트 파일을 선택하세요."></textarea>
+              <div class="editor-status">
+                <span id="editorStatus">선택된 파일 없음</span>
+                <span>UTF-8 · 최대 2MB</span>
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-backdrop hidden" id="authModal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <form class="auth-card" id="authForm">
+        <span class="brand-mark large" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M5 3h14l2 4-2 14H5L3 7l2-4Zm2.2 3-1 2h11.6l-1-2H7.2ZM7 11v6h3v-6H7Zm7 0v6h3v-6h-3Z"/></svg>
+        </span>
+        <p class="eyebrow">SECURE ACCESS</p>
+        <h2 id="authTitle">관리자 인증</h2>
+        <p>환경 설정에 지정한 ADMIN_TOKEN을 입력하세요.</p>
+        <label for="tokenInput">관리 토큰</label>
+        <input id="tokenInput" type="password" autocomplete="current-password" required>
+        <p class="form-error" id="authError"></p>
+        <button class="button button-primary full-width" type="submit">관리 화면 열기</button>
+      </form>
+    </div>
+
+    <div class="toast-container" id="toastContainer" aria-live="polite"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
