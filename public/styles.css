@@ -864,6 +864,23 @@ svg {
   white-space: pre-wrap;
 }
 
+.console-message .ansi-bold {
+  font-weight: 800;
+}
+
+.console-message .ansi-dim {
+  opacity: 0.68;
+}
+
+.console-message .ansi-italic {
+  font-style: italic;
+}
+
+.console-message .ansi-underline {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .console-line.command .console-message,
 .console-line.command .console-stream {
   color: var(--blue);

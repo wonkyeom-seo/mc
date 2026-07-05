@@ -12,6 +12,16 @@
     metricEntries: [],
     currentMetricDate: '',
     metricsIntervalMs: 5_000,
+    commandHistory: (() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem('mc-control-command-history') || '[]');
+        return Array.isArray(saved) ? saved.filter((item) => typeof item === 'string').slice(-100) : [];
+      } catch {
+        return [];
+      }
+    })(),
+    commandHistoryIndex: -1,
+    commandDraft: '',
     currentDirectory: '',
     selectedFile: null,
     originalContent: '',
@@ -398,7 +408,19 @@
 
     const message = document.createElement('span');
     message.className = 'console-message';
-    message.textContent = entry.stream === 'command' ? `> ${entry.message}` : entry.message;
+    const renderedMessage = entry.stream === 'command' ? `> ${entry.message}` : entry.message;
+    const segments = window.AnsiConsole?.parseAnsi(renderedMessage) || [{ text: renderedMessage }];
+    segments.forEach((segment) => {
+      const text = document.createElement('span');
+      text.textContent = segment.text;
+      if (segment.color) text.style.color = segment.color;
+      if (segment.backgroundColor) text.style.backgroundColor = segment.backgroundColor;
+      if (segment.bold) text.classList.add('ansi-bold');
+      if (segment.dim) text.classList.add('ansi-dim');
+      if (segment.italic) text.classList.add('ansi-italic');
+      if (segment.underline) text.classList.add('ansi-underline');
+      message.append(text);
+    });
 
     line.append(time, stream, message);
     elements.consoleOutput.append(line);
@@ -435,7 +457,10 @@
       const marker = document.createElement('i');
       marker.className = `stream-${entryClass(entry) === 'error' ? 'error' : entry.stream}`;
       const message = document.createElement('span');
-      message.textContent = entry.stream === 'command' ? `명령 실행: ${entry.message}` : entry.message;
+      const activityMessage = entry.stream === 'command'
+        ? `명령 실행: ${entry.message}`
+        : entry.message;
+      message.textContent = window.AnsiConsole?.stripAnsi(activityMessage) || activityMessage;
       row.append(time, marker, message);
       elements.activityList.append(row);
     });
@@ -768,6 +793,16 @@
         method: 'POST',
         body: JSON.stringify({ command }),
       });
+      if (state.commandHistory[state.commandHistory.length - 1] !== command) {
+        state.commandHistory.push(command);
+        state.commandHistory = state.commandHistory.slice(-100);
+        localStorage.setItem(
+          'mc-control-command-history',
+          JSON.stringify(state.commandHistory),
+        );
+      }
+      state.commandHistoryIndex = -1;
+      state.commandDraft = '';
       elements.commandInput.value = '';
     } catch (error) {
       toast(error.message, 'error');
@@ -775,6 +810,24 @@
       elements.sendCommandButton.disabled = !['starting', 'running'].includes(state.status?.state);
       elements.commandInput.focus();
     }
+  });
+  elements.commandInput.addEventListener('keydown', (event) => {
+    if (!['ArrowUp', 'ArrowDown'].includes(event.key) || !state.commandHistory.length) return;
+    event.preventDefault();
+    const result = window.CommandHistory.navigate({
+      history: state.commandHistory,
+      index: state.commandHistoryIndex,
+      draft: state.commandDraft,
+      current: elements.commandInput.value,
+      direction: event.key === 'ArrowUp' ? 'up' : 'down',
+    });
+    state.commandHistoryIndex = result.index;
+    state.commandDraft = result.draft;
+    elements.commandInput.value = result.value;
+    elements.commandInput.setSelectionRange(
+      elements.commandInput.value.length,
+      elements.commandInput.value.length,
+    );
   });
   elements.refreshFilesButton.addEventListener('click', () => loadDirectory(state.currentDirectory));
   elements.fileEditor.addEventListener('input', () => {
