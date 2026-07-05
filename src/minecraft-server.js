@@ -92,6 +92,10 @@ class MinecraftServerManager extends EventEmitter {
     child.once('spawn', () => {
       if (this.child !== child) return;
       this.state = 'running';
+      this.emit('process:started', {
+        pid: child.pid,
+        sessionId: this.sessionId,
+      });
       this.emitStatus();
     });
 
@@ -111,6 +115,10 @@ class MinecraftServerManager extends EventEmitter {
       clearTimeout(this.stopTimer);
       const wasStopping = this.state === 'stopping';
       this.child = null;
+      this.emit('process:stopped', {
+        pid: child.pid,
+        sessionId: this.sessionId,
+      });
       this.ready = false;
       this.lastExit = {
         code,

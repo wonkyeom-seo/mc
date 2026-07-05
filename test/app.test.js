@@ -49,4 +49,10 @@ test('protects management APIs and serves status', async (t) => {
   const status = await authorized.json();
   assert.equal(status.state, 'stopped');
   assert.equal(status.jarExists, false);
+
+  const metrics = await fetch(`${baseUrl}/api/metrics`, {
+    headers: { Authorization: 'Bearer test-secret' },
+  });
+  assert.equal(metrics.status, 200);
+  assert.deepEqual((await metrics.json()).entries, []);
 });

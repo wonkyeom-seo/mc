@@ -9,6 +9,9 @@
     socket: null,
     consoleEntries: [],
     currentLogDate: '',
+    metricEntries: [],
+    currentMetricDate: '',
+    metricsIntervalMs: 5_000,
     currentDirectory: '',
     selectedFile: null,
     originalContent: '',
@@ -40,6 +43,14 @@
     jarValue: document.querySelector('#jarValue'),
     serverDirectory: document.querySelector('#serverDirectory'),
     activityList: document.querySelector('#activityList'),
+    metricsDate: document.querySelector('#metricsDate'),
+    metricsRange: document.querySelector('#metricsRange'),
+    metricsLive: document.querySelector('#metricsLive'),
+    cpuMetricValue: document.querySelector('#cpuMetricValue'),
+    memoryMetricValue: document.querySelector('#memoryMetricValue'),
+    metricsUpdatedAt: document.querySelector('#metricsUpdatedAt'),
+    cpuChart: document.querySelector('#cpuChart'),
+    memoryChart: document.querySelector('#memoryChart'),
     logDate: document.querySelector('#logDate'),
     livePill: document.querySelector('#livePill'),
     consoleOutput: document.querySelector('#consoleOutput'),
@@ -181,6 +192,7 @@
     elements.jarValue.textContent = `${status.jarName}${status.jarExists ? '' : ' (없음)'}`;
     elements.serverDirectory.textContent = status.serverDirectory;
     updateUptime();
+    renderMetrics();
   }
 
   function formatDuration(seconds) {
@@ -206,6 +218,158 @@
     const duration = formatDuration(seconds);
     elements.uptimeValue.textContent = duration;
     elements.sidebarUptime.textContent = duration;
+  }
+
+  function visibleMetricEntries() {
+    const entries = state.metricEntries;
+    const range = elements.metricsRange.value;
+    if (!entries.length || range === 'all') return entries;
+    const rangeMs = Number(range) * 60_000;
+    const endTime = state.currentMetricDate === state.today
+      ? Date.now()
+      : new Date(entries[entries.length - 1].timestamp).getTime();
+    return entries.filter((entry) => new Date(entry.timestamp).getTime() >= endTime - rangeMs);
+  }
+
+  function roundedChartMaximum(value, minimum, step) {
+    return Math.max(minimum, Math.ceil(value / step) * step);
+  }
+
+  function drawMetricChart(canvas, entries, options) {
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    if (!width || !height) return;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    const context = canvas.getContext('2d');
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.clearRect(0, 0, width, height);
+
+    if (!entries.length) {
+      context.fillStyle = '#626b63';
+      context.font = '11px ui-monospace, monospace';
+      context.textAlign = 'center';
+      context.fillText('저장된 데이터가 없습니다.', width / 2, height / 2);
+      return;
+    }
+
+    const padding = { top: 16, right: 17, bottom: 28, left: 48 };
+    const plotWidth = Math.max(1, width - padding.left - padding.right);
+    const plotHeight = Math.max(1, height - padding.top - padding.bottom);
+    const values = entries.map((entry) => Number(entry[options.key]) || 0);
+    const maximum = options.maximum(Math.max(...values));
+    const times = entries.map((entry) => new Date(entry.timestamp).getTime());
+    const firstTime = Math.min(...times);
+    const lastTime = Math.max(...times);
+    const timeSpan = Math.max(lastTime - firstTime, 1);
+
+    context.strokeStyle = '#252b26';
+    context.lineWidth = 1;
+    context.fillStyle = '#59615a';
+    context.font = '9px ui-monospace, monospace';
+    context.textAlign = 'right';
+    context.textBaseline = 'middle';
+    for (let index = 0; index <= 4; index += 1) {
+      const y = padding.top + (plotHeight * index) / 4;
+      context.beginPath();
+      context.moveTo(padding.left, y);
+      context.lineTo(width - padding.right, y);
+      context.stroke();
+      context.fillText(options.formatAxis(maximum * (1 - index / 4)), padding.left - 8, y);
+    }
+
+    context.textAlign = 'center';
+    context.textBaseline = 'top';
+    [0, 0.5, 1].forEach((position) => {
+      const timestamp = firstTime + timeSpan * position;
+      const x = padding.left + plotWidth * position;
+      context.fillText(
+        new Date(timestamp).toLocaleTimeString('ko-KR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        }),
+        x,
+        height - padding.bottom + 10,
+      );
+    });
+
+    const points = entries.map((entry, index) => ({
+      x: padding.left + ((times[index] - firstTime) / timeSpan) * plotWidth,
+      y: padding.top + plotHeight - (values[index] / maximum) * plotHeight,
+    }));
+    if (points.length === 1) points[0].x = padding.left + plotWidth;
+
+    const gradient = context.createLinearGradient(0, padding.top, 0, padding.top + plotHeight);
+    gradient.addColorStop(0, options.fill);
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    context.beginPath();
+    context.moveTo(points[0].x, padding.top + plotHeight);
+    points.forEach((point) => context.lineTo(point.x, point.y));
+    context.lineTo(points[points.length - 1].x, padding.top + plotHeight);
+    context.closePath();
+    context.fillStyle = gradient;
+    context.fill();
+
+    context.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) context.moveTo(point.x, point.y);
+      else context.lineTo(point.x, point.y);
+    });
+    context.strokeStyle = options.color;
+    context.lineWidth = 1.6;
+    context.lineJoin = 'round';
+    context.stroke();
+
+    const latest = points[points.length - 1];
+    context.beginPath();
+    context.arc(latest.x, latest.y, 3, 0, Math.PI * 2);
+    context.fillStyle = options.color;
+    context.fill();
+  }
+
+  function renderMetrics() {
+    const entries = visibleMetricEntries();
+    const latest = state.metricEntries[state.metricEntries.length - 1];
+    const isHistory = Boolean(state.currentMetricDate && state.currentMetricDate !== state.today);
+    const serverActive = ['starting', 'running', 'stopping'].includes(state.status?.state);
+    const fresh = latest
+      && Date.now() - new Date(latest.timestamp).getTime() < state.metricsIntervalMs * 2.5
+      && serverActive
+      && !isHistory;
+
+    elements.metricsLive.classList.toggle('active', Boolean(fresh));
+    elements.metricsLive.classList.toggle('history', isHistory);
+    elements.metricsLive.innerHTML = fresh
+      ? '<i></i> LIVE'
+      : isHistory
+        ? '<i></i> HISTORY'
+        : '<i></i> 대기 중';
+
+    elements.cpuMetricValue.textContent = latest ? `${Number(latest.cpuPercent).toFixed(1)}%` : '—';
+    elements.memoryMetricValue.textContent = latest ? formatBytes(latest.rssBytes) : '—';
+    elements.metricsUpdatedAt.textContent = latest
+      ? `마지막 수집 ${new Date(latest.timestamp).toLocaleString('ko-KR', { hour12: false })}`
+      : '서버 실행 후 자동으로 수집됩니다.';
+
+    drawMetricChart(elements.cpuChart, entries, {
+      key: 'cpuPercent',
+      color: '#72e06f',
+      fill: 'rgba(114, 224, 111, 0.22)',
+      maximum: (value) => roundedChartMaximum(value, 100, 25),
+      formatAxis: (value) => `${Math.round(value)}%`,
+    });
+    drawMetricChart(elements.memoryChart, entries, {
+      key: 'rssBytes',
+      color: '#71a9f7',
+      fill: 'rgba(113, 169, 247, 0.22)',
+      maximum: (value) => roundedChartMaximum(value, 512 * 1024 * 1024, 256 * 1024 * 1024),
+      formatAxis: (value) => {
+        if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)}G`;
+        return `${Math.round(value / 1024 ** 2)}M`;
+      },
+    });
   }
 
   function entryClass(entry) {
@@ -313,6 +477,30 @@
     updateLivePill();
   }
 
+  async function loadMetricDates() {
+    const data = await api('/api/metrics/dates');
+    state.today = data.today;
+    const dates = [...new Set([data.today, ...data.dates])];
+    const selected = dates.includes(state.currentMetricDate) ? state.currentMetricDate : data.today;
+    elements.metricsDate.replaceChildren(...dates.map((date) => {
+      const option = document.createElement('option');
+      option.value = date;
+      option.textContent = date === data.today ? `${date} · 오늘` : date;
+      return option;
+    }));
+    elements.metricsDate.value = selected;
+    state.currentMetricDate = selected;
+  }
+
+  async function loadMetrics(date = state.currentMetricDate || state.today) {
+    const data = await api(`/api/metrics?date=${encodeURIComponent(date)}&maxPoints=2000`);
+    state.currentMetricDate = data.date;
+    state.metricEntries = data.entries;
+    state.metricsIntervalMs = data.intervalMs || 5_000;
+    elements.metricsDate.value = data.date;
+    renderMetrics();
+  }
+
   function updateLivePill() {
     const live = state.currentLogDate === state.today;
     elements.livePill.classList.toggle('history', !live);
@@ -330,6 +518,14 @@
         addConsoleEntry(entry);
         renderActivity(state.consoleEntries);
       }
+    });
+    state.socket.on('metrics:entry', (entry) => {
+      if (state.currentMetricDate !== state.today) return;
+      const existingIndex = state.metricEntries.findIndex((item) => item.id === entry.id);
+      if (existingIndex >= 0) state.metricEntries[existingIndex] = entry;
+      else state.metricEntries.push(entry);
+      if (state.metricEntries.length > 20_000) state.metricEntries.shift();
+      renderMetrics();
     });
     state.socket.on('connect_error', (error) => {
       if (/인증/.test(error.message)) showAuth();
@@ -506,8 +702,8 @@
 
   async function startApp() {
     connectSocket();
-    await Promise.all([refreshStatus(), loadLogDates()]);
-    await loadLogs(state.today);
+    await Promise.all([refreshStatus(), loadLogDates(), loadMetricDates()]);
+    await Promise.all([loadLogs(state.today), loadMetrics(state.today)]);
     setView(location.hash.slice(1) || 'dashboard');
   }
 
@@ -540,8 +736,11 @@
   });
   elements.refreshButton.addEventListener('click', async () => {
     try {
-      await Promise.all([refreshStatus(), loadLogDates()]);
-      await loadLogs(state.currentLogDate);
+      await Promise.all([refreshStatus(), loadLogDates(), loadMetricDates()]);
+      await Promise.all([
+        loadLogs(state.currentLogDate),
+        loadMetrics(state.currentMetricDate),
+      ]);
       if (document.querySelector('#view-files').classList.contains('active')) {
         await loadDirectory(state.currentDirectory);
       }
@@ -554,6 +753,8 @@
   elements.headerStartButton.addEventListener('click', () => runServerAction('start'));
   elements.stopButton.addEventListener('click', () => runServerAction('stop'));
   elements.logDate.addEventListener('change', () => loadLogs(elements.logDate.value));
+  elements.metricsDate.addEventListener('change', () => loadMetrics(elements.metricsDate.value));
+  elements.metricsRange.addEventListener('change', renderMetrics);
   elements.clearConsoleButton.addEventListener('click', () => {
     elements.consoleOutput.innerHTML = '<div class="terminal-empty">화면을 비웠습니다. 저장된 로그는 삭제되지 않았습니다.</div>';
   });
@@ -589,6 +790,7 @@
   });
   elements.saveFileButton.addEventListener('click', saveFile);
   window.addEventListener('hashchange', () => setView(location.hash.slice(1) || 'dashboard'));
+  window.addEventListener('resize', renderMetrics);
   setInterval(updateUptime, 1_000);
 
   initialize();

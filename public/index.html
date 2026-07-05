@@ -114,6 +114,59 @@
             </article>
           </div>
 
+          <article class="panel metrics-panel" data-testid="metrics-panel">
+            <div class="panel-heading metrics-heading">
+              <div>
+                <p class="eyebrow">PROCESS METRICS</p>
+                <h2>Java 프로세스 사용량</h2>
+              </div>
+              <div class="metrics-controls">
+                <span class="metrics-live" id="metricsLive"><i></i> 대기 중</span>
+                <select id="metricsRange" class="select" aria-label="그래프 범위">
+                  <option value="30">최근 30분</option>
+                  <option value="60" selected>최근 1시간</option>
+                  <option value="360">최근 6시간</option>
+                  <option value="1440">최근 24시간</option>
+                  <option value="all">전체</option>
+                </select>
+                <select id="metricsDate" class="select" aria-label="메트릭 날짜" data-testid="metrics-date"></select>
+              </div>
+            </div>
+            <div class="metrics-summary">
+              <div class="metric-value">
+                <span class="metric-marker cpu"></span>
+                <div>
+                  <small>CPU</small>
+                  <strong id="cpuMetricValue">—</strong>
+                </div>
+              </div>
+              <div class="metric-value">
+                <span class="metric-marker memory"></span>
+                <div>
+                  <small>메모리 RSS</small>
+                  <strong id="memoryMetricValue">—</strong>
+                </div>
+              </div>
+              <p id="metricsUpdatedAt">서버 실행 후 자동으로 수집됩니다.</p>
+            </div>
+            <div class="metrics-grid">
+              <section class="chart-card">
+                <div class="chart-title">
+                  <span>CPU 사용률</span>
+                  <small>Java · 코어 합산</small>
+                </div>
+                <canvas id="cpuChart" class="metrics-chart" role="img" aria-label="Minecraft Java 프로세스 CPU 사용률 그래프"></canvas>
+              </section>
+              <section class="chart-card">
+                <div class="chart-title">
+                  <span>메모리 사용량</span>
+                  <small>Resident Set Size</small>
+                </div>
+                <canvas id="memoryChart" class="metrics-chart" role="img" aria-label="Minecraft Java 프로세스 메모리 RSS 그래프"></canvas>
+              </section>
+            </div>
+          </article>
+
           <div class="dashboard-grid">
             <article class="panel activity-panel">
               <div class="panel-heading">

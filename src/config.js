@@ -5,7 +5,11 @@ function positiveInteger(value, fallback) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function parseJsonArray(value, fallback = []) {
+function integerAtLeast(value, fallback, minimum) {
+  return Math.max(positiveInteger(value, fallback), minimum);
+}
+
+function parseJsonArray(value, fallback = [], variableName = 'MC_EXTRA_JAVA_ARGS') {
   if (!value) return fallback;
 
   try {
@@ -15,7 +19,7 @@ function parseJsonArray(value, fallback = []) {
     }
     return parsed;
   } catch (error) {
-    throw new Error(`MC_EXTRA_JAVA_ARGS는 JSON 문자열 배열이어야 합니다: ${error.message}`);
+    throw new Error(`${variableName}는 JSON 문자열 배열이어야 합니다: ${error.message}`);
   }
 }
 
@@ -32,6 +36,11 @@ function loadConfig(env = process.env) {
     : path.resolve(serverDir, jarSetting);
   const host = env.HOST || '127.0.0.1';
   const adminToken = (env.ADMIN_TOKEN || '').trim();
+  const serverArgs = parseJsonArray(
+    env.MC_SERVER_ARGS,
+    ['--nogui', '--nojline'],
+    'MC_SERVER_ARGS',
+  );
 
   if (!isLoopbackHost(host) && !adminToken) {
     throw new Error('LAN에 공개하려면 ADMIN_TOKEN을 반드시 설정해야 합니다.');
@@ -53,9 +62,10 @@ function loadConfig(env = process.env) {
       ...parseJsonArray(env.MC_EXTRA_JAVA_ARGS),
       '-jar',
       jarPath,
-      'nogui',
+      ...serverArgs,
     ],
     stopTimeoutMs: positiveInteger(env.MC_STOP_TIMEOUT_MS, 30_000),
+    metricsIntervalMs: integerAtLeast(env.METRICS_INTERVAL_MS, 5_000, 1_000),
     dataDir: path.join(projectRoot, 'data'),
     publicDir: path.join(projectRoot, 'public'),
   };

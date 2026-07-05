@@ -6,6 +6,8 @@ const helmet = require('helmet');
 const { Server } = require('socket.io');
 const { LogStore, formatLocalDate } = require('./log-store');
 const { ServerFileStore } = require('./file-store');
+const { LinuxProcessMetricsReader } = require('./linux-process-metrics');
+const { MetricsCollector, MetricsStore } = require('./metrics-store');
 const { MinecraftServerManager } = require('./minecraft-server');
 
 function tokenMatches(actual, expected) {
@@ -22,10 +24,16 @@ function requestToken(req) {
 
 async function createApplication(config) {
   const logStore = new LogStore(config.dataDir);
+  const metricsStore = new MetricsStore(config.dataDir);
   const fileStore = new ServerFileStore(config.serverDir);
-  await Promise.all([logStore.init(), fileStore.init()]);
+  await Promise.all([logStore.init(), metricsStore.init(), fileStore.init()]);
 
   const manager = new MinecraftServerManager(config, logStore);
+  const metricsCollector = new MetricsCollector(
+    metricsStore,
+    config.metricsReader || new LinuxProcessMetricsReader(),
+    config.metricsIntervalMs || 5_000,
+  );
   const app = express();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
@@ -136,6 +144,28 @@ async function createApplication(config) {
     }
   });
 
+  app.get('/api/metrics/dates', async (req, res, next) => {
+    try {
+      res.json({ dates: await metricsStore.listDates(), today: formatLocalDate() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/metrics', async (req, res, next) => {
+    try {
+      const date = String(req.query.date || formatLocalDate());
+      const entries = await metricsStore.read(date, req.query.maxPoints);
+      res.json({
+        date,
+        entries,
+        intervalMs: metricsCollector.intervalMs,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/files', async (req, res, next) => {
     try {
       const currentPath = String(req.query.path || '');
@@ -195,10 +225,15 @@ async function createApplication(config) {
 
   io.on('connection', async (socket) => {
     socket.emit('server:status', await manager.getStatus());
+    if (metricsCollector.latest) socket.emit('metrics:entry', metricsCollector.latest);
   });
   manager.on('console', (entry) => io.emit('console:entry', entry));
   manager.on('status', (status) => io.emit('server:status', status));
+  manager.on('process:started', ({ pid, sessionId }) => metricsCollector.start(pid, sessionId));
+  manager.on('process:stopped', () => metricsCollector.stop());
   manager.on('managerError', (error) => console.error(error));
+  metricsCollector.on('metric', (entry) => io.emit('metrics:entry', entry));
+  metricsCollector.on('collectorError', (error) => console.error('메트릭 수집 오류:', error));
 
   return {
     app,
@@ -207,6 +242,8 @@ async function createApplication(config) {
     io,
     logStore,
     manager,
+    metricsCollector,
+    metricsStore,
   };
 }
 
