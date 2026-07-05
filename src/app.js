@@ -35,17 +35,23 @@ async function createApplication(config) {
 
   app.disable('x-powered-by');
   app.use(helmet({
+    // 이 앱은 기본적으로 HTTP로 직접 실행됩니다. TLS/HSTS는 리버스 프록시에서
+    // 설정해야 하며, HTTP 자산을 HTTPS로 강제 승격하면 CSS/JS가 로드되지 않습니다.
+    strictTransportSecurity: false,
     contentSecurityPolicy: {
+      useDefaults: false,
       directives: {
         defaultSrc: ["'self'"],
         connectSrc: ["'self'", 'ws:', 'wss:'],
         scriptSrc: ["'self'"],
+        scriptSrcAttr: ["'none'"],
         styleSrc: ["'self'"],
         imgSrc: ["'self'", 'data:'],
         fontSrc: ["'self'"],
         objectSrc: ["'none'"],
         baseUri: ["'none'"],
         frameAncestors: ["'none'"],
+        formAction: ["'self'"],
       },
     },
   }));

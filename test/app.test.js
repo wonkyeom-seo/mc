@@ -37,6 +37,11 @@ test('protects management APIs and serves status', async (t) => {
   const unauthorized = await fetch(`${baseUrl}/api/status`);
   assert.equal(unauthorized.status, 401);
 
+  const page = await fetch(`${baseUrl}/`);
+  const contentSecurityPolicy = page.headers.get('content-security-policy');
+  assert.doesNotMatch(contentSecurityPolicy, /upgrade-insecure-requests/);
+  assert.equal(page.headers.get('strict-transport-security'), null);
+
   const authorized = await fetch(`${baseUrl}/api/status`, {
     headers: { Authorization: 'Bearer test-secret' },
   });
