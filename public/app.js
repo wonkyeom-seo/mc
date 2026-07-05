@@ -12,6 +12,13 @@
     metricEntries: [],
     currentMetricDate: '',
     metricsIntervalMs: 5_000,
+    players: {
+      serverRunning: false,
+      online: [],
+      onlineCount: 0,
+      maxPlayers: null,
+      updatedAt: null,
+    },
     commandHistory: (() => {
       try {
         const saved = JSON.parse(localStorage.getItem('mc-control-command-history') || '[]');
@@ -68,6 +75,17 @@
     commandForm: document.querySelector('#commandForm'),
     commandInput: document.querySelector('#commandInput'),
     sendCommandButton: document.querySelector('#sendCommandButton'),
+    refreshPlayersButton: document.querySelector('#refreshPlayersButton'),
+    onlinePlayerCount: document.querySelector('#onlinePlayerCount'),
+    maxPlayerCount: document.querySelector('#maxPlayerCount'),
+    playersUpdatedAt: document.querySelector('#playersUpdatedAt'),
+    playerList: document.querySelector('#playerList'),
+    playerActionForm: document.querySelector('#playerActionForm'),
+    playerNameInput: document.querySelector('#playerNameInput'),
+    playerActionSelect: document.querySelector('#playerActionSelect'),
+    playerReasonField: document.querySelector('#playerReasonField'),
+    playerReasonInput: document.querySelector('#playerReasonInput'),
+    runPlayerActionButton: document.querySelector('#runPlayerActionButton'),
     refreshFilesButton: document.querySelector('#refreshFilesButton'),
     breadcrumbs: document.querySelector('#breadcrumbs'),
     fileList: document.querySelector('#fileList'),
@@ -83,6 +101,7 @@
   const viewMeta = {
     dashboard: ['OVERVIEW', '서버 대시보드'],
     console: ['LIVE TERMINAL', '실시간 콘솔'],
+    players: ['PLAYER CONTROL', '플레이어 관리'],
     files: ['FILE MANAGER', '서버 파일 관리'],
   };
 
@@ -128,6 +147,7 @@
     history.replaceState(null, '', `#${view}`);
     if (view === 'files') loadDirectory(state.currentDirectory);
     if (view === 'console') requestAnimationFrame(scrollConsoleToBottom);
+    if (view === 'players') loadPlayers(true);
   }
 
   function statusInfo(status) {
@@ -552,6 +572,7 @@
       if (state.metricEntries.length > 20_000) state.metricEntries.shift();
       renderMetrics();
     });
+    state.socket.on('players:update', renderPlayers);
     state.socket.on('connect_error', (error) => {
       if (/인증/.test(error.message)) showAuth();
     });
@@ -569,6 +590,118 @@
       toast(`서버 ${label} 요청을 보냈습니다.`);
     } catch (error) {
       toast(error.message, 'error');
+    }
+  }
+
+  function playerActionLabel(action) {
+    return {
+      op: 'OP 권한 부여',
+      deop: 'OP 권한 회수',
+      kick: '서버에서 내보내기',
+      ban: '밴',
+      pardon: '밴 해제',
+      'whitelist-add': '화이트리스트 추가',
+      'whitelist-remove': '화이트리스트 삭제',
+    }[action] || action;
+  }
+
+  function updatePlayerReasonField() {
+    const visible = ['kick', 'ban'].includes(elements.playerActionSelect.value);
+    elements.playerReasonField.classList.toggle('hidden', !visible);
+    if (!visible) elements.playerReasonInput.value = '';
+  }
+
+  function preparePlayerAction(player, action) {
+    elements.playerNameInput.value = player;
+    elements.playerActionSelect.value = action;
+    updatePlayerReasonField();
+    if (['kick', 'ban'].includes(action)) elements.playerReasonInput.focus();
+    else elements.runPlayerActionButton.focus();
+  }
+
+  function renderPlayers(players) {
+    state.players = players;
+    elements.onlinePlayerCount.textContent = players.onlineCount ?? players.online.length;
+    elements.maxPlayerCount.textContent = players.maxPlayers ?? '—';
+    elements.runPlayerActionButton.disabled = !players.serverRunning;
+    elements.playersUpdatedAt.textContent = players.updatedAt
+      ? `마지막 확인 ${new Date(players.updatedAt).toLocaleTimeString('ko-KR', { hour12: false })}`
+      : players.serverRunning
+        ? '플레이어 목록을 확인하는 중입니다.'
+        : '서버가 꺼져 있습니다.';
+    elements.playerList.replaceChildren();
+
+    if (!players.online.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state compact';
+      empty.textContent = players.serverRunning
+        ? '접속 중인 플레이어가 없습니다.'
+        : '서버를 시작하면 플레이어 목록을 확인할 수 있습니다.';
+      elements.playerList.append(empty);
+      return;
+    }
+
+    players.online.forEach((player) => {
+      const row = document.createElement('div');
+      row.className = 'player-row';
+      const identity = document.createElement('div');
+      identity.className = 'player-identity';
+      const avatar = document.createElement('span');
+      avatar.className = 'player-avatar';
+      avatar.textContent = player.slice(0, 2);
+      const details = document.createElement('div');
+      const name = document.createElement('strong');
+      name.textContent = player;
+      const online = document.createElement('small');
+      online.textContent = '● ONLINE';
+      details.append(name, online);
+      identity.append(avatar, details);
+
+      const actions = document.createElement('div');
+      actions.className = 'player-actions';
+      [
+        ['op', 'OP', false],
+        ['kick', 'KICK', false],
+        ['ban', 'BAN', true],
+      ].forEach(([action, label, danger]) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `player-action-button${danger ? ' danger' : ''}`;
+        button.textContent = label;
+        button.addEventListener('click', () => preparePlayerAction(player, action));
+        actions.append(button);
+      });
+      row.append(identity, actions);
+      elements.playerList.append(row);
+    });
+  }
+
+  async function loadPlayers(silent = false) {
+    try {
+      renderPlayers(await api('/api/players'));
+    } catch (error) {
+      if (!silent) toast(error.message, 'error');
+    }
+  }
+
+  async function runPlayerAction(player, action, reason = '') {
+    if (['kick', 'ban'].includes(action)) {
+      const confirmed = window.confirm(`${player} 플레이어에게 '${playerActionLabel(action)}' 작업을 실행할까요?`);
+      if (!confirmed) return;
+    }
+    elements.runPlayerActionButton.disabled = true;
+    try {
+      await api('/api/players/action', {
+        method: 'POST',
+        body: JSON.stringify({ player, action, reason }),
+      });
+      toast(`${player}: ${playerActionLabel(action)} 작업을 실행했습니다.`);
+      elements.playerReasonInput.value = '';
+      setTimeout(() => loadPlayers(true), 350);
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      elements.runPlayerActionButton.disabled = !state.players.serverRunning;
     }
   }
 
@@ -727,7 +860,7 @@
 
   async function startApp() {
     connectSocket();
-    await Promise.all([refreshStatus(), loadLogDates(), loadMetricDates()]);
+    await Promise.all([refreshStatus(), loadLogDates(), loadMetricDates(), loadPlayers(true)]);
     await Promise.all([loadLogs(state.today), loadMetrics(state.today)]);
     setView(location.hash.slice(1) || 'dashboard');
   }
@@ -769,6 +902,9 @@
       if (document.querySelector('#view-files').classList.contains('active')) {
         await loadDirectory(state.currentDirectory);
       }
+      if (document.querySelector('#view-players').classList.contains('active')) {
+        await loadPlayers(true);
+      }
       toast('최신 상태로 갱신했습니다.');
     } catch (error) {
       toast(error.message, 'error');
@@ -780,6 +916,16 @@
   elements.logDate.addEventListener('change', () => loadLogs(elements.logDate.value));
   elements.metricsDate.addEventListener('change', () => loadMetrics(elements.metricsDate.value));
   elements.metricsRange.addEventListener('change', renderMetrics);
+  elements.refreshPlayersButton.addEventListener('click', () => loadPlayers());
+  elements.playerActionSelect.addEventListener('change', updatePlayerReasonField);
+  elements.playerActionForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    runPlayerAction(
+      elements.playerNameInput.value.trim(),
+      elements.playerActionSelect.value,
+      elements.playerReasonInput.value.trim(),
+    );
+  });
   elements.clearConsoleButton.addEventListener('click', () => {
     elements.consoleOutput.innerHTML = '<div class="terminal-empty">화면을 비웠습니다. 저장된 로그는 삭제되지 않았습니다.</div>';
   });
@@ -845,6 +991,10 @@
   window.addEventListener('hashchange', () => setView(location.hash.slice(1) || 'dashboard'));
   window.addEventListener('resize', renderMetrics);
   setInterval(updateUptime, 1_000);
+  setInterval(() => {
+    const playersVisible = document.querySelector('#view-players').classList.contains('active');
+    if (playersVisible && state.players.serverRunning) loadPlayers(true);
+  }, 10_000);
 
   initialize();
 })();

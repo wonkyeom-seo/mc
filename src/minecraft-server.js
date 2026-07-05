@@ -2,6 +2,26 @@ const { EventEmitter } = require('node:events');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs/promises');
 const { randomUUID } = require('node:crypto');
+const { stripAnsi } = require('../public/ansi');
+
+const PLAYER_NAME_PATTERN = /^[A-Za-z0-9_]{1,16}$/;
+
+function parsePlayerListLine(message) {
+  const clean = stripAnsi(message).replace(/\u00a7[0-9A-FK-OR]/gi, '');
+  const match = clean.match(
+    /There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online:?\s*(.*)$/i,
+  );
+  if (!match) return null;
+  const players = match[3]
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => PLAYER_NAME_PATTERN.test(name));
+  return {
+    online: players,
+    onlineCount: Number(match[1]),
+    maxPlayers: Number(match[2]),
+  };
+}
 
 class MinecraftServerManager extends EventEmitter {
   constructor(config, logStore) {
@@ -17,6 +37,9 @@ class MinecraftServerManager extends EventEmitter {
     this.stopTimer = null;
     this.stdoutBuffer = '';
     this.stderrBuffer = '';
+    this.onlinePlayers = [];
+    this.maxPlayers = null;
+    this.playersUpdatedAt = null;
   }
 
   async getStatus() {
@@ -92,6 +115,9 @@ class MinecraftServerManager extends EventEmitter {
     child.once('spawn', () => {
       if (this.child !== child) return;
       this.state = 'running';
+      this.onlinePlayers = [];
+      this.maxPlayers = null;
+      this.playersUpdatedAt = null;
       this.emit('process:started', {
         pid: child.pid,
         sessionId: this.sessionId,
@@ -120,6 +146,9 @@ class MinecraftServerManager extends EventEmitter {
         sessionId: this.sessionId,
       });
       this.ready = false;
+      this.onlinePlayers = [];
+      this.playersUpdatedAt = new Date().toISOString();
+      this.emitPlayers();
       this.lastExit = {
         code,
         signal,
@@ -157,11 +186,94 @@ class MinecraftServerManager extends EventEmitter {
   }
 
   async handleLine(stream, message) {
+    this.updatePlayersFromLine(message);
     if (!this.ready && /\bDone \([\d.]+s\)!/.test(message)) {
       this.ready = true;
       this.emitStatus();
     }
     await this.record(stream, message);
+  }
+
+  updatePlayersFromLine(message) {
+    const list = parsePlayerListLine(message);
+    if (list) {
+      this.onlinePlayers = list.online;
+      this.maxPlayers = list.maxPlayers;
+      this.playersUpdatedAt = new Date().toISOString();
+      this.emitPlayers();
+      return;
+    }
+
+    const clean = stripAnsi(message).replace(/\u00a7[0-9A-FK-OR]/gi, '');
+    const joined = clean.match(/:\s*([A-Za-z0-9_]{1,16}) joined the game\s*$/i);
+    const left = clean.match(/:\s*([A-Za-z0-9_]{1,16}) left the game\s*$/i);
+    if (joined && !this.onlinePlayers.includes(joined[1])) {
+      this.onlinePlayers.push(joined[1]);
+      this.playersUpdatedAt = new Date().toISOString();
+      this.emitPlayers();
+    } else if (left) {
+      this.onlinePlayers = this.onlinePlayers.filter((name) => name !== left[1]);
+      this.playersUpdatedAt = new Date().toISOString();
+      this.emitPlayers();
+    }
+  }
+
+  getPlayers() {
+    return {
+      serverRunning: Boolean(this.child && ['starting', 'running', 'stopping'].includes(this.state)),
+      online: [...this.onlinePlayers],
+      onlineCount: this.onlinePlayers.length,
+      maxPlayers: this.maxPlayers,
+      updatedAt: this.playersUpdatedAt,
+    };
+  }
+
+  async requestPlayerList(timeoutMs = 1_500) {
+    if (!this.child || !['starting', 'running'].includes(this.state)) return this.getPlayers();
+
+    const result = new Promise((resolve) => {
+      let timer;
+      const onPlayers = (players) => {
+        clearTimeout(timer);
+        this.off('players', onPlayers);
+        resolve(players);
+      };
+      timer = setTimeout(() => {
+        this.off('players', onPlayers);
+        resolve(this.getPlayers());
+      }, timeoutMs);
+      timer.unref?.();
+      this.on('players', onPlayers);
+    });
+    this.child.stdin.write('list\n');
+    return result;
+  }
+
+  async managePlayer(action, playerName, reason = '') {
+    const name = String(playerName ?? '').trim();
+    if (!PLAYER_NAME_PATTERN.test(name)) {
+      throw this.error('플레이어 이름은 영문, 숫자, 밑줄만 사용한 1~16자여야 합니다.', 400);
+    }
+    const normalizedReason = String(reason ?? '').trim();
+    if (normalizedReason.length > 120 || /[\r\n]/.test(normalizedReason)) {
+      throw this.error('사유는 한 줄, 120자 이하여야 합니다.', 400);
+    }
+
+    const commands = {
+      kick: `kick ${name}${normalizedReason ? ` ${normalizedReason}` : ''}`,
+      ban: `ban ${name}${normalizedReason ? ` ${normalizedReason}` : ''}`,
+      pardon: `pardon ${name}`,
+      op: `op ${name}`,
+      deop: `deop ${name}`,
+      'whitelist-add': `whitelist add ${name}`,
+      'whitelist-remove': `whitelist remove ${name}`,
+    };
+    if (typeof action !== 'string' || !Object.hasOwn(commands, action)) {
+      throw this.error('지원하지 않는 플레이어 작업입니다.', 400);
+    }
+    const command = commands[action];
+    await this.sendCommand(command);
+    return { ok: true, action, player: name };
   }
 
   async sendCommand(command) {
@@ -234,6 +346,10 @@ class MinecraftServerManager extends EventEmitter {
       .catch((error) => this.emit('managerError', error));
   }
 
+  emitPlayers() {
+    this.emit('players', this.getPlayers());
+  }
+
   error(message, statusCode) {
     const error = new Error(message);
     error.statusCode = statusCode;
@@ -243,4 +359,6 @@ class MinecraftServerManager extends EventEmitter {
 
 module.exports = {
   MinecraftServerManager,
+  parsePlayerListLine,
+  PLAYER_NAME_PATTERN,
 };

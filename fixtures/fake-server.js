@@ -16,5 +16,9 @@ input.on('line', (line) => {
     setTimeout(() => process.exit(0), 20);
     return;
   }
+  if (line === 'list') {
+    console.log('[Server thread/INFO]: There are 2 of a max of 20 players online: Steve, Alex_2');
+    return;
+  }
   console.log(`[Server thread/INFO]: Executed command: ${line}`);
 });

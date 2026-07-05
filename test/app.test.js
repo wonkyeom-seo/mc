@@ -55,4 +55,20 @@ test('protects management APIs and serves status', async (t) => {
   });
   assert.equal(metrics.status, 200);
   assert.deepEqual((await metrics.json()).entries, []);
+
+  const players = await fetch(`${baseUrl}/api/players`, {
+    headers: { Authorization: 'Bearer test-secret' },
+  });
+  assert.equal(players.status, 200);
+  assert.equal((await players.json()).serverRunning, false);
+
+  const invalidPlayerAction = await fetch(`${baseUrl}/api/players/action`, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer test-secret',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action: 'op', player: 'bad player' }),
+  });
+  assert.equal(invalidPlayerAction.status, 400);
 });

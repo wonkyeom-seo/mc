@@ -126,6 +126,26 @@ async function createApplication(config) {
     }
   });
 
+  app.get('/api/players', async (req, res, next) => {
+    try {
+      res.json(await manager.requestPlayerList());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/players/action', async (req, res, next) => {
+    try {
+      res.json(await manager.managePlayer(
+        req.body?.action,
+        req.body?.player,
+        req.body?.reason,
+      ));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/logs/dates', async (req, res, next) => {
     try {
       res.json({ dates: await logStore.listDates(), today: formatLocalDate() });
@@ -229,6 +249,7 @@ async function createApplication(config) {
   });
   manager.on('console', (entry) => io.emit('console:entry', entry));
   manager.on('status', (status) => io.emit('server:status', status));
+  manager.on('players', (players) => io.emit('players:update', players));
   manager.on('process:started', ({ pid, sessionId }) => metricsCollector.start(pid, sessionId));
   manager.on('process:stopped', () => metricsCollector.stop());
   manager.on('managerError', (error) => console.error(error));
